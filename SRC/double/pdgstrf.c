@@ -413,12 +413,14 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
     s_eps = smach_dist("Epsilon");
     thresh = s_eps * anorm;
 
+    /*
     MPI_Comm_get_attr (MPI_COMM_WORLD, MPI_TAG_UB, &attr_val, &flag);
     if (!flag) {
-        fprintf (stderr, "Could not get TAG_UB\n");
+        fprintf (stderr, "Could not get TAG_UB2\n");
         return (-1);
     }
-    int tag_ub = *(int *) attr_val;
+    */
+    int tag_ub = INT16_MAX; // *(int *) attr_val;
 
 #if ( PRNTlevel>=1 )
     if (!iam) {
@@ -436,6 +438,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
     if (iam == 0) fgemm = fopen("dgemm_mnk.dat", "w");
     int_t *prof_sendR = intCalloc_dist(nsupers);
 #endif
+
 
     stat->ops[FACT]      = 0.0;
     stat->current_buffer = 0.0;
@@ -562,6 +565,8 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
 #endif
 
 #if 0
+    printf("test omp good\n\n");
+    fflush(stdout);
     omp_loop_time = (double *) _mm_malloc (sizeof (double) * num_threads,64);
 #else
     omp_loop_time = (double *) SUPERLU_MALLOC(num_threads * sizeof(double));
@@ -993,7 +998,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
     InitTimer = SuperLU_timer_() - tt1;
 
     double pxgstrfTimer = SuperLU_timer_();
-
+  
     /* ##################################################################
        ** Handle first block column separately to start the pipeline. **
        ################################################################## */
@@ -1014,6 +1019,8 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
                   U_diag_blk_send_req, tag_ub, stat, info);
 
         pdgstrf2_timer += SuperLU_timer_()-ttt1;
+        
+      
 
         scp = &grid->rscp;      /* The scope of process row. */
 
@@ -1042,6 +1049,8 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
                 MPI_Isend (lusup, msgcnt[1], MPI_DOUBLE, pj,
                            SLU_MPI_TAG (1, 0) /* 1 */,
                            scp->comm, &send_req[pj + Pc]);
+                
+
 #if ( DEBUGlevel>=2 )
                 printf ("[%d] first block cloumn Send L(:,%4d): lsub %4d, lusup %4d to Pc %2d\n",
                         iam, 0, msgcnt[0], msgcnt[1], pj);
@@ -1167,6 +1176,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
                             MPI_Isend (lusup1, msgcnt[1], MPI_DOUBLE, pj,
                                        SLU_MPI_TAG (1, kk0),  /* (4*kk0+1)%tag_ub */
                                        scp->comm, &send_req[pj + Pc]);
+
 #if ( PROFlevel>=1 )
 			    TOC (t2, t1);
 			    stat->utime[COMM] += t2;
@@ -1195,6 +1205,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
                                    MPI_DOUBLE, kcol,
                                    SLU_MPI_TAG (1, kk0), /* (4*kk0+1)%tag_ub */
                                    scp->comm, &recv_req[1]);
+
 #if ( PROFlevel>=1 )
 			TOC (t2, t1);
 			stat->utime[COMM] += t2;
@@ -1221,6 +1232,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
                     MPI_Irecv (Uval_buf, Llu->bufmax[3], MPI_DOUBLE, krow,
                                SLU_MPI_TAG (3, kk0) /* (4*kk0+3)%tag_ub */ ,
                                scp->comm, &recv_reqs_u[look_id][1]);
+
 #if ( PROFlevel>=1 )
 		    TOC (t2, t1);
 		    stat->utime[COMM] += t2;
@@ -1321,6 +1333,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
                         }
 
                         if (ToSendD[lk] == YES) {
+                            
                             for (pi = 0; pi < Pr; ++pi) {
                                 if (pi != myrow) {
 #if ( PROFlevel>=1 )
@@ -1548,6 +1561,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
                 TIC (t1);
 #endif
                 MPI_Wait (&recv_reqs_u[look_id][0], &status);
+               
                 MPI_Get_count (&status, mpi_int_t, &msgcnt[2]);
                 MPI_Wait (&recv_reqs_u[look_id][1], &status);
                 MPI_Get_count (&status, MPI_DOUBLE, &msgcnt[3]);
@@ -1815,8 +1829,9 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
         if (U_diag_blk_send_req[myrow] != MPI_REQUEST_NULL) {
             /* wait for last Isend requests to complete, deallocate objects */
             for (krow = 0; krow < Pr; ++krow) {
-                if (krow != myrow)
+                if (krow != myrow) {
                     MPI_Wait (U_diag_blk_send_req + krow, &status);
+                }
             }
         }
         SUPERLU_FREE (U_diag_blk_send_req);
@@ -1924,6 +1939,7 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
     TIC (t1);
 #endif
 
+
     /* Prepare error message - find the smallesr index i that U(i,i)==0 */
     if ( *info == 0 ) *info = n + 1;
     MPI_Allreduce (info, &iinfo, 1, MPI_INT, MPI_MIN, grid->comm);
@@ -2000,4 +2016,3 @@ pdgstrf(superlu_dist_options_t * options, int m, int n, double anorm,
 
     return 0;
 } /* PDGSTRF */
-

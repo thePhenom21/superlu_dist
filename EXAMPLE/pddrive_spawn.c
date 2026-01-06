@@ -23,6 +23,10 @@ at the top-level directory.
 
 #include <math.h>
 #include "superlu_ddefs.h"
+#include <stdio.h>
+#include <unistd.h>
+#include <mpi.h>
+
 
 /*! \brief
  *
@@ -46,6 +50,23 @@ at the top-level directory.
  *    mpiexec -n <np> pddrive -r <proc rows> -c <proc columns> big.rua
  * </pre>
  */
+
+void set_env_from_string(char *env_str) {
+    char *line;
+    char *saveptr1, *saveptr2;
+
+    line = strtok_r(env_str, "\n", &saveptr1);
+    while (line != NULL) {
+        char *key = strtok_r(line, "=", &saveptr2);
+        char *value = strtok_r(NULL, "=", &saveptr2);
+
+        if (key && value) {
+            setenv(key, value, 1);
+        }
+        
+        line = strtok_r(NULL, "\n", &saveptr1);
+    }
+}
 
 int main(int argc, char *argv[])
 {
@@ -76,12 +97,117 @@ int main(int argc, char *argv[])
 	lookahead = 10; 
 	colperm = 4;
 
-    /* ------------------------------------------------------------
-       INITIALIZE MPI ENVIRONMENT. 
-       ------------------------------------------------------------*/
-    //MPI_Init( &argc, &argv );
-    MPI_Init_thread( &argc, &argv, MPI_THREAD_MULTIPLE, &omp_mpi_level); 
-	MPI_Comm_get_parent(&parent);   	
+    MPI_Session session = MPI_SESSION_NULL; 
+    MPI_Group group = MPI_GROUP_NULL;
+    MPI_Comm union_comm = MPI_COMM_NULL;
+    MPI_Info inf = MPI_INFO_NULL;
+    char main_pset[MPI_MAX_PSET_NAME_LEN];
+    int flag = 0;
+
+    printf("\n\n\nwe are inside pddrive_spawn (Session Mode)\n\n\n\n");
+
+    setenv("OMPI_MPI_THREAD_LEVEL", "MPI_THREAD_MULTIPLE", 1);
+
+    int err;
+    
+    MPI_Info session_info = MPI_INFO_NULL;
+    MPI_Info_create(&session_info);
+    MPI_Info_set(session_info, "thread_level", "MPI_THREAD_MULTIPLE");
+    
+    err = MPI_Session_init(session_info, MPI_ERRORS_ARE_FATAL, &session);
+    MPI_Info_free(&session_info);
+
+    MPI_Info info_inside = MPI_INFO_NULL;
+    MPI_Info_create(&info_inside);
+    MPI_Session_get_info(session, &info_inside);
+
+    char thread_str[MPI_MAX_PSET_NAME_LEN] = "";
+
+    MPI_Info_get(info_inside, "thread_level", MPI_MAX_PSET_NAME_LEN, thread_str, &flag);
+    printf("info inside says %s\n", thread_str);
+
+    if (err != MPI_SUCCESS) {
+        printf("Error initializing MPI Session\n");
+        MPI_Abort(MPI_COMM_WORLD, err);
+    }
+    
+    /* Query what threading level we got */
+    int temp_thread_level;
+    MPI_Query_thread(&temp_thread_level);
+    switch (temp_thread_level) {
+      case MPI_THREAD_SINGLE:
+		printf("MPI_Query_thread with MPI_THREAD_SINGLE\n");
+		fflush(stdout);
+	break;
+      case MPI_THREAD_FUNNELED:
+		printf("MPI_Query_thread with MPI_THREAD_FUNNELED\n");
+		fflush(stdout);
+	break;
+      case MPI_THREAD_SERIALIZED:
+		printf("MPI_Query_thread with MPI_THREAD_SERIALIZED\n");
+		fflush(stdout);
+	break;
+      case MPI_THREAD_MULTIPLE:
+		printf("MPI_Query_thread with MPI_THREAD_MULTIPLE\n");
+		fflush(stdout);
+	break;
+    }
+
+
+
+    strcpy(main_pset, "mpi://WORLD");
+    printf("test1\n");
+
+    const char *keys[2] = {"inter_pset", "env_str"};
+
+    // Pass 'keys' directly. In C, the array name 'keys' evaluates to a char**
+    MPI_Session_get_pset_data(session, main_pset, main_pset, keys, 2, 1, &inf);
+
+    char env_str[MPI_MAX_PSET_NAME_LEN] = "";
+
+    /* CLEANUP AFTER USE */
+    if (inf != MPI_INFO_NULL) {
+        MPI_Info_get(inf, "inter_pset", MPI_MAX_PSET_NAME_LEN, main_pset, &flag);
+        MPI_Info_get(inf, "env_str", MPI_MAX_PSET_NAME_LEN, env_str, &flag);
+        MPI_Info_free(&inf);
+    }
+    //free(keys[0]);
+
+    // Set environment variables from the retrieved env_str
+    set_env_from_string(env_str);
+    printf("nrel is now: %s\n", getenv("NREL"));
+    
+
+    //MPI_Info_get(inf, "inter_pset", MPI_MAX_PSET_NAME_LEN, main_pset, &flag);
+
+    printf("test2\n");
+
+    printf("Using pset: %s\n", main_pset);
+   
+    /* Create Group and Communicator from PSet */
+    MPI_Group_from_session_pset (session, main_pset, &group);
+    MPI_Comm_create_from_group(group, "mpi.forum.example", MPI_INFO_NULL, MPI_ERRORS_ARE_FATAL, &union_comm);
+
+
+
+    MPI_Comm comm = MPI_COMM_NULL;
+    MPI_Group group2 = MPI_GROUP_NULL;
+
+    MPI_Group_from_session_pset(session, "mpi://WORLD", &group2);
+    MPI_Comm_create_from_group(group2, "lcm.example", MPI_INFO_NULL, MPI_ERRORS_RETURN, &comm);
+
+    printf("after comm creation\n");
+
+    /*
+    group2 = session.Create_group("mpi://WORLD")
+    local_comm = MPI.Intracomm.Create_from_group(
+        group2, "lcm.example", MPI.INFO_NULL, MPI.ERRORS_RETURN
+    )
+    */
+
+    printf("test3\n");
+    
+    //parent = MPI_COMM_NULL;
 	
 	
 
@@ -125,7 +251,7 @@ int main(int argc, char *argv[])
     /* ------------------------------------------------------------
        INITIALIZE THE SUPERLU PROCESS GRID. 
        ------------------------------------------------------------*/
-    superlu_gridinit(MPI_COMM_WORLD, nprow, npcol, &grid);
+    superlu_gridinit(comm, nprow, npcol, &grid);
 	
     if(grid.iam==0){
 	MPI_Query_thread(&omp_mpi_level);
@@ -186,7 +312,6 @@ int main(int argc, char *argv[])
        GET THE MATRIX FROM FILE AND SETUP THE RIGHT HAND SIDE. 
        ------------------------------------------------------------*/
     dcreate_matrix_postfix(&A, nrhs, &b, &ldb, &xtrue, &ldx, fp, postfix, &grid);
-
     if ( !(berr = doubleMalloc_dist(nrhs)) )
 	ABORT("Malloc fails for berr[].");
 
@@ -233,7 +358,6 @@ int main(int argc, char *argv[])
     m = A.nrow;
     n = A.ncol;
 
-    /* Initialize ScalePermstruct and LUstruct. */
     dScalePermstructInit(m, n, &ScalePermstruct);
     dLUstructInit(n, &LUstruct);
 
@@ -243,14 +367,14 @@ int main(int argc, char *argv[])
     /* Call the linear equation solver. */
     pdgssvx(&options, &A, &ScalePermstruct, b, ldb, nrhs, &grid,
 	    &LUstruct, &SOLVEstruct, berr, &stat, &info);
-
+    
 
     /* Check the accuracy of the solution. */
     pdinf_norm_error(iam, ((NRformat_loc *)A.Store)->m_loc,
 		     nrhs, b, ldb, xtrue, ldx, grid.comm);
-
+    
     PStatPrint(&options, &stat, &grid);        /* Print the statistics. */
-
+    
 	
 	
 	
@@ -298,21 +422,41 @@ int main(int argc, char *argv[])
     SUPERLU_FREE(xtrue);
     SUPERLU_FREE(berr);
 
+    printf("we reached here\n");
+    fflush(stdout);
+
     /* ------------------------------------------------------------
        RELEASE THE SUPERLU PROCESS GRID.
        ------------------------------------------------------------*/
 out:
-if(parent!=MPI_COMM_NULL)
-	MPI_Reduce(result, MPI_BOTTOM, 2, MPI_FLOAT,MPI_MAX, 0, parent);
+    /* Parent communication removed */
+    /* if(parent!=MPI_COMM_NULL)
+	MPI_Reduce(result, MPI_BOTTOM, 2, MPI_FLOAT,MPI_MAX, 0, parent); */
+    MPI_Reduce(result, MPI_BOTTOM, 2, MPI_FLOAT,MPI_MAX, 0, union_comm);
     superlu_gridexit(&grid);
 
     /* ------------------------------------------------------------
        TERMINATES THE MPI EXECUTION ENVIRONMENT.
        ------------------------------------------------------------*/
 	   
-	if(parent!=MPI_COMM_NULL)
-	MPI_Comm_disconnect(&parent);
-    MPI_Finalize();
+    /* if(parent!=MPI_COMM_NULL)
+	MPI_Comm_disconnect(&parent); */
+
+    printf("we reached here2\n");
+    fflush(stdout);
+
+    MPI_Comm_disconnect(&union_comm);
+
+    printf("we reached here2.1\n");
+    fflush(stdout);
+
+    
+
+
+    MPI_Session_finalize(&session);
+
+    printf("we reached here3\n");
+    fflush(stdout);
 
 #if ( DEBUGlevel>=1 )
     CHECK_MALLOC(iam, "Exit main()");
