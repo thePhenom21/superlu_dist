@@ -48,15 +48,22 @@ void superlu_gridinit(MPI_Comm Bcomm, /* The base communicator upon which
 	for (i = 0; i < nprow; ++i) usermap[j*nprow+i] = i*npcol+j;
     
     /* Check MPI environment initialization. */
-    MPI_Initialized( &info );
-    if ( !info )
-	ABORT("C main program must explicitly call MPI_Init()");
+    
+    //MPI_Initialized( &info );
+    //if ( !info )
+	//ABORT("C main program must explicitly call MPI_Init()");
+
+    printf("test we are inside superlu_gridinit\n");
+    fflush(stdout);
 
     MPI_Comm_size( Bcomm, &info );
     if ( info < Np ) {
 	printf("Number of processes %d is smaller than NPROW * NPCOL %d", info, Np);
 	exit(-1);
     }
+
+    printf("test we are before superlu_gridmap\n");
+    fflush(stdout);
 
     superlu_gridmap(Bcomm, nprow, npcol, usermap, nprow, grid);
     
@@ -119,9 +126,9 @@ void superlu_gridmap(
 #endif
     
     /* Check MPI environment initialization. */
-    MPI_Initialized( &info );
-    if ( !info )
-	ABORT("C main program must explicitly call MPI_Init()");
+    //MPI_Initialized( &info );
+    //if ( !info )
+	//ABORT("C main program must explicitly call MPI_Init()");
 
     grid->nprow = nprow;
     grid->npcol = npcol;
@@ -131,6 +138,9 @@ void superlu_gridmap(
     for (j = 0; j < npcol; ++j)
 	for (i = 0; i < nprow; ++i)
 	    pranks[i*npcol+j] = usermap[j*ldumap+i];
+
+    printf("test we are inside superlu_gridmap\n");
+    fflush(stdout);
     
     /*
      * Form MPI communicator for all.
@@ -144,6 +154,9 @@ void superlu_gridmap(
        even if they do not belong in the new group -- superlu_grp.
        The function returns MPI_COMM_NULL to processes that are not in superlu_grp. */
     MPI_Comm_create( Bcomm, superlu_grp, &grid->comm );
+
+    printf("test after MPI_Comm_create in superlu_gridmap\n");
+    fflush(stdout);
 
     /* Bail out if I am not in the group "superlu_grp". */
     if ( grid->comm == MPI_COMM_NULL ) {

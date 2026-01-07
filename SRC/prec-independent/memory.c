@@ -63,9 +63,9 @@ long int superlu_malloc_total = 0;
 void *superlu_malloc_dist(size_t size)
 {
     char *buf;
-    int iam;
+    int iam = -1;
 
-    MPI_Comm_rank(MPI_COMM_WORLD, &iam);
+    // MPI_Comm_rank(MPI_COMM_WORLD, &iam);
     if ( size <= 0 ) {
 	printf("(%d) superlu_malloc size %lu\n", iam, size);
 	ABORT("superlu_malloc: nonpositive size");
@@ -304,10 +304,10 @@ int_t symbfact_SubInit
     int_t  *usub, *xusub;
     int_t  nzlmax, nzumax;
     int_t  FILL = sp_ienv_dist(6, options);
-    int iam;
+    int iam = -1;
 
 #if ( DEBUGlevel>=1 )
-    MPI_Comm_rank( MPI_COMM_WORLD, &iam );
+    // MPI_Comm_rank( MPI_COMM_WORLD, &iam );
     CHECK_MALLOC(iam, "Enter symbfact_SubInit()");
 #endif
 
@@ -471,8 +471,8 @@ int_t symbfact_SubXpand
 int symbfact_SubFree(Glu_freeable_t *Glu_freeable)
 {
 #if ( DEBUGlevel>=1 )
-    int iam;
-    MPI_Comm_rank( MPI_COMM_WORLD, &iam );
+    int iam = -1;
+    // MPI_Comm_rank( MPI_COMM_WORLD, &iam );
     CHECK_MALLOC(iam, "Enter symbfact_SubFree()");
 #endif
     if(expanders != NULL){

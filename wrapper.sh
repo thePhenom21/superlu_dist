@@ -7,14 +7,17 @@ hostname
 echo "--------------------------"
 echo "Process ID: $$"
 
-export OMP_NUM_THREADS=2
+last_arg="${@: -1}"
+result="${*:1:$(( $# - 1 ))}"
 
-command="./pddrive_spawn"
+
+export OMP_NUM_THREADS=$last_arg
+echo "OMP_NUM_THREADS set to $OMP_NUM_THREADS"
+
+command="./build/EXAMPLE/pddrive_spawn"
 if [ ! -f $command ] ; then
     echo "Error: pdqrdriver binary not found!"
     exit 1
 fi
-echo "Executing command: $command $*"
-$command $*
-#command="./hello"
-#$command
+echo "Executing command: $command $result"
+$command $result
